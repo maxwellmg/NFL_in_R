@@ -1,0 +1,500 @@
+---
+title: "What makes an NFL team Successful?"
+author: "Maxwell Miller-Golub"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    code_folding: hide
+    number_sections: yes
+    includes:
+      #after_body: footer.html
+    toc: yes
+    toc_float: yes
+    code_download: yes
+    theme: united
+    df_print: kable
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(digits = 3)
+library(tidyverse)
+library(rmarkdown)
+library(tinytex)
+library(ggstats)
+library(plotrix)
+library(readxl)
+library(ggpubr)
+library(lubridate)
+library(readr)
+library(ggimage)
+library(ggplot2)
+library(scales) 
+
+
+```
+# Abstract 
+
+In a game "decided by inches," what impact does environment have?<br><br>
+The goal of this project is to use NFL statistics to determine how what factors impact game outcome. (other than the talent on the field) 
+<br>
+<br>
+My explanatory variables include weather (measured by Dome vs Open Stadiums), Field type (grass vs turf), and Home field advantage. 
+<br>
+<br>
+Response variables include your basic measures of football success (yards, score, first downs, etc.) along with a few others. This analysis will briefly explore whether gameplan (measured by rushing vs passing attempts) is impacted as well. 
+<br>
+<br>
+<p>The <a href="https://www.reddit.com/r/datasets/comments/djucb6/nfl_game_stats_scraped_from_espn/">dataset</a> I've found includes every game from the 2002 through the 2019 seasons and started with 39 variables. </p> I created additional data sets to include data on stadium and field type. Lets begin!
+
+# Acknowledgements
+
+Special thanks to: <br><br>
+Google: 49 searches <br>
+Stack Overflow: 22 pages <br>
+GeeksForGeeks : 17 pages <br>
+Time spent combining data tables: 10 hours <br>
+(Times cried: 0.5)
+
+
+# Extract {.tabset}
+
+```{r data_import, include=FALSE}
+
+#set wd to csv locations
+
+nfl_stats <- read_csv("nfl_stats.csv")
+Stadium_by_Year <- read_csv("Stadium_by_Year.csv")
+Stadium_Type2 <- read_csv("Stadium_Type.csv")
+Teams <- read_csv("Team_by_Team.csv")
+```
+
+## Statistics
+``` {r stat}
+nfl_stats %>% 
+  head(10)
+```
+
+## Stadium by Year
+```{r stadium}
+Stadium_by_Year %>% 
+  head(10)
+```
+
+## Stadium Features
+``` {r types}
+Stadium_Type2 %>% 
+  head(10)
+```
+# {-}
+
+# Transform
+
+## Columns separated (by "-")
+<ul><li>third_downs_away</li><li>third_downs_home</li><li>fourth_downs_away</li><li>fourth_downs_home</li><li>comp_att_away</li><li>comp_att_home</li><li>redzone_away</li><li>redzone_home</li><li>sacks_away</li><li>sacks_home</li><li>penalties_away</li><li>penalties_home</li></ul>
+## Columns added
+<ul><li>total_score</li><li>total_first_downs</li><li>total_fumbles</li><li>total_ints</li><li>yards_per_carry (rushing yards per attempt, home/away/total)</li><li>total_turnovers</li><li>completion_percentage (home/away/total)</li><li>yards_per_catch (passing yards per catch, home/away/total)</li><li>score_difference</li>
+<li>passing_attempts_total</li><li>passing_yards_total</li><li>passing_completions_total</li><li>rushing_yards_total</li>
+<li>total_yards</li><li>ratio_pass_to_run</li></ul>
+## Columns Fixed (Time)
+<ul><li>minute:second:millisecond -> combined to total_seconds_possession (one continuous variable)</li>
+<li>get season from year (to match on stadium)</li></ul>
+## Tables Combined
+<ul><li>nfl_stats</li><li>stadium_by_year</li><li>stadium_type</li></ul>
+
+
+```{r data_clean}
+
+clean_nfl_stats <- nfl_stats %>% 
+  rename(home_team = home) %>% 
+  rename(away_team = away) %>% 
+  separate(col = third_downs_away, sep = "-", into = c("third_down_away_conv", "third_down_away_att")) %>% 
+  separate(col = third_downs_home, sep = "-", into = c("third_down_home_conv", "third_down_home_att")) %>%
+  separate(col = fourth_downs_away, sep = "-", into = c("fourth_down_away_conv", "fourth_down_away_att")) %>%
+  separate(col = fourth_downs_home, sep = "-", into = c("fourth_down_home_conv", "fourth_down_home_att")) %>%
+  separate(col = comp_att_away, sep = "-", into = c("completions_away", "attempts_away")) %>%
+  separate(col = comp_att_home, sep = "-", into = c("completions_home", "attempts_home")) %>%
+  separate(col = redzone_away, sep = "-", into = c("redzone_away_comp", "redzone_away_att")) %>%
+  separate(col = redzone_home, sep = "-", into = c("redzone_home_comp", "redzone_home_att")) %>%
+  separate(col = sacks_away, sep = "-", into = c("sacks_away", "sack_yards_away")) %>%
+  separate(col = sacks_home, sep = "-", into = c("sacks_home", "sacks_yards_home")) %>%
+  separate(col = penalties_away, sep = "-", into = c("penalties_away", "penalties_yards_away")) %>%
+  separate(col = penalties_home, sep = "-", into = c("penalties_home", "penalties_yards_home")) %>% 
+  mutate(total_fumbles = fumbles_away + fumbles_home) %>% 
+  mutate(total_ints = int_away + int_home) %>% 
+  mutate(total_turnovers = total_ints + total_fumbles) %>% 
+  mutate(yards_per_carry_away = rushing_yards_away / rushing_attempts_away) %>% 
+  mutate(yards_per_carry_home = rushing_yards_home / rushing_attempts_home) %>% 
+  mutate(yards_per_carry_total = (yards_per_carry_home + yards_per_carry_away) / 2) %>% 
+  mutate(total_score = score_away + score_home) %>% 
+  mutate(total_first_downs = first_downs_away + first_downs_home) %>% 
+  mutate(date = ymd(date)) %>% 
+  mutate(season = case_when(
+    month(date) < 4 ~ (year(date) - 1),
+    month(date) > 4 ~ year(date)
+  )) %>% 
+  separate(col = possession_away, sep = ":", into = c("poss_away_min", "poss_away_sec", "a_milliseconds")) %>%
+  separate(col = poss_away_sec, sep = -1, into = c("poss_away_10sec", "poss_away_1sec")) %>%
+  mutate("poss_away(total_seconds)" = as.integer(poss_away_min)*60 + as.integer(poss_away_10sec)*10 + as.integer(poss_away_1sec)) %>% 
+  separate(col = possession_home, sep = ":", into = c("poss_home_min", "poss_home_sec", "h_milliseconds")) %>% 
+  separate(col = poss_home_sec, sep = -1, into = c("poss_home_10sec", "poss_home_1sec")) %>%
+  mutate("poss_home(total_seconds)" = as.integer(poss_home_min)*60 + as.integer(poss_home_10sec)*10 + as.integer(poss_home_1sec)) %>% 
+  mutate(completions_away = as.integer(completions_away)) %>% 
+  mutate(attempts_away = as.integer(attempts_away)) %>%
+  mutate(completion_per_away = completions_away / attempts_away) %>%
+  mutate(completions_home = as.integer(completions_home)) %>% 
+  mutate(attempts_home = as.integer(attempts_home)) %>% 
+  mutate(completion_per_home = completions_home / attempts_home) %>%
+  mutate(completion_per_total = (completion_per_away + completion_per_home) / 2) %>%
+  mutate(yards_per_catch_away = passing_yards_away / completions_away) %>% 
+  mutate(yards_per_catch_home = passing_yards_home / completions_home) %>% 
+  mutate(yards_per_catch_total = (yards_per_catch_home + yards_per_catch_away) / 2) %>% 
+  select(season, date, away_team, home_team, score_away, score_home, total_score, "poss_away(total_seconds)", "poss_home(total_seconds)", first_downs_away, first_downs_home, total_first_downs, third_down_away_conv, third_down_away_att, third_down_home_conv, third_down_home_att, fourth_down_away_conv, fourth_down_away_att, fourth_down_home_conv, fourth_down_home_att, completions_away, attempts_away, completion_per_away, passing_yards_away, yards_per_catch_away, completions_home, attempts_home, completion_per_home, passing_yards_home, yards_per_catch_home, yards_per_catch_total, completion_per_total, rushing_yards_away, rushing_attempts_away, yards_per_carry_away, rushing_yards_home, rushing_attempts_home, yards_per_carry_home, yards_per_carry_total, total_yards_away, total_yards_home, sacks_away, sack_yards_away, sacks_home, sacks_yards_home, fumbles_away, fumbles_home, total_fumbles, int_away, int_home, total_ints, turnovers_away, turnovers_home, total_turnovers, def_st_td_away, def_st_td_home, penalties_away, penalties_yards_away, penalties_home, penalties_yards_home, drives_away, drives_home)
+
+# CREATE STADIUM COLUMN
+clean_nfl_stats$stadium <- "filler"
+
+for(i in 1:nrow(clean_nfl_stats)) {
+  
+  # For each row in nfl_stats, get the home team and the season
+  current_row <- clean_nfl_stats[i, , drop = TRUE]
+  current_season <- current_row$season
+  current_home_team <- current_row$home_team
+  
+  # Get the index of the row and column for the Stadium Table, get Stadium Name
+  current_season_position <- current_row$season - 2000
+  current_team_position <- which(Stadium_by_Year$Team == current_home_team)
+  current_stadium <- Stadium_by_Year[current_team_position, current_season_position]
+  #print(stadium)
+  
+  # Write Stadium into df
+  clean_nfl_stats[i, 63] = current_stadium
+}
+
+#CREATE STADIUM/FIELD TYPE COLUMNS
+
+clean_nfl_stats$stadium_type <- "filler"
+clean_nfl_stats$field_type <- "filler"
+
+
+for(i in 1:nrow(clean_nfl_stats)) {
+  current_row <- clean_nfl_stats[i, , drop = TRUE]
+  current_stadium <- current_row$stadium
+  
+  # Error handling with Everbank and Acrisure Stadiums
+  if (current_stadium == "Everbank" | current_stadium == "Acrisure Stadium"){
+    clean_nfl_stats[i, 64] = "Open"
+    clean_nfl_stats[i, 65] = "Grass"
+    next
+  }
+  stadium_position <- which(Stadium_Type2$stadium == current_stadium)
+  current_stadium_type <- Stadium_Type2[stadium_position, 2]
+  current_field_type <- Stadium_Type2[stadium_position, 3]
+  
+  # Write Stadium and Field Type into df
+  clean_nfl_stats[i, 64] = current_stadium_type
+  clean_nfl_stats[i, 65] = current_field_type
+}
+
+for(i in 1:nrow(clean_nfl_stats)) {
+  current_row <- clean_nfl_stats[i, , drop = TRUE]
+  if (current_row[63] == "Giants Stadium") {
+    if (current_row[1] == 2002) {
+      clean_nfl_stats[i, 65] = "Grass"
+    }
+  }
+}
+
+stats_plus_stadiums <- clean_nfl_stats %>% 
+  select(season, date, away_team, home_team, stadium, stadium_type, field_type, score_away, score_home, total_score, "poss_away(total_seconds)", "poss_home(total_seconds)", first_downs_away, first_downs_home, total_first_downs, third_down_away_conv, third_down_away_att, third_down_home_conv, third_down_home_att, fourth_down_away_conv, fourth_down_away_att, fourth_down_home_conv, fourth_down_home_att, completions_away, attempts_away, completion_per_away, passing_yards_away, yards_per_catch_away, completions_home, attempts_home, completion_per_home, passing_yards_home, yards_per_catch_home, yards_per_catch_total, completion_per_total, rushing_yards_away, rushing_attempts_away, yards_per_carry_away, rushing_yards_home, rushing_attempts_home, yards_per_carry_home, yards_per_carry_total, total_yards_away, total_yards_home, sacks_away, sack_yards_away, sacks_home, sacks_yards_home, fumbles_away, fumbles_home, total_fumbles, int_away, int_home, total_ints, turnovers_away, turnovers_home, total_turnovers, def_st_td_away, def_st_td_home, penalties_away, penalties_yards_away, penalties_home, penalties_yards_home, drives_away, drives_home)
+
+head_stats_plus_stadiums <- stats_plus_stadiums %>% 
+  head(10)
+
+head_stats_plus_stadiums
+```
+
+# Digging In {.tabset}
+
+## Bar Plot
+
+```{r images_bar_plot}
+Teams$image_file <- paste0("team_pictures/", Teams$team, ".png" )
+
+ggplot(Teams, aes(x = reorder(team, +`combined mean`), y = `combined mean`, fill = team)) +
+  geom_bar(stat = "identity")  +
+  theme_classic() +
+  geom_image(aes(image = image_file), size = 0.06, asp = 1.5) +
+  labs(x = "Teams", y = "Average Score") +
+  scale_y_continuous(limits=c(15,30),oob = rescale_none) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 60, hjust = 1)) +
+  ggtitle("NFL Teams Average Points Scored (2002-2019)")
+```
+
+## Scatter Plot
+``` {r scatter_teams, warning=FALSE}
+ggplot(Teams, aes(x = `combined mean`, y = `total games`)) +
+  geom_point(color = NA) +
+  theme_classic() +
+  geom_image(aes(image = image_file), size = 0.08, asp = 1.5) +
+  theme(legend.position = "none") +
+  labs(x = "Average Score", y = "Games Played (including Playoffs)") +
+  ggtitle("NFL Teams Average Points vs Games Played (2002-2019)")
+```
+
+#{-}
+
+
+
+# Stadium Type (Weather)
+
+``` {r Dome_vs_Open graphs}
+stadium_stats <- stats_plus_stadiums %>% 
+  #mutate(stadium_type = factor(stadium_type, levels=c("Open", "Dome")))
+  mutate(rushing_attempts_total = rushing_attempts_away + rushing_attempts_home) %>% 
+  mutate(score_difference = abs(score_away - score_home)) %>% 
+  mutate(passing_attempts_total = attempts_away + attempts_home) %>% 
+  mutate(passing_yards_total = passing_yards_away + passing_yards_home) %>% 
+  mutate(passing_completions_total = completions_away + completions_home) %>% 
+  mutate(rushing_yards_total = rushing_yards_away + rushing_yards_home) %>% 
+  mutate(total_yards = total_yards_away + total_yards_home) %>% 
+  mutate(score_difference = abs(score_away - score_home)) %>%
+  mutate(ratio_pass_to_run = passing_attempts_total / rushing_attempts_total) %>% 
+  select(stadium_type, field_type, score_difference, total_score, total_first_downs, passing_attempts_total, passing_completions_total, completion_per_total, yards_per_catch_total, passing_yards_total, rushing_yards_total, yards_per_carry_total, rushing_attempts_total, ratio_pass_to_run, total_yards, total_fumbles, total_ints, total_turnovers)
+
+```
+
+## Histograms {.tabset}
+
+### Total Score
+
+```{r scoreplot}
+ggplot(stadium_stats, aes(x = total_score)) +
+  geom_histogram(fill = "blue", binwidth = 3) +
+  facet_wrap(~stadium_type)
+```
+
+### Pass Attempts:Run Attempts
+
+The higher the ratio, the more passes attempted compared to rush attempts 
+
+```{r ratioplot}
+ggplot(stadium_stats, aes(x = ratio_pass_to_run)) +
+  geom_histogram(fill = "green", binwidth = .05) +
+  facet_wrap(~stadium_type)
+```
+
+### Total Yards
+
+```{r yardsplot}
+ggplot(stadium_stats, aes(x = total_yards)) +
+  geom_histogram(fill = "red", binwidth = 10) +
+  facet_wrap(~stadium_type)
+```
+
+### Total Yards Per Catch (YPC)
+
+```{r ypcplot}
+ggplot(stadium_stats, aes(x = yards_per_catch_total)) +
+  geom_histogram(fill = "purple", binwidth = 0.5) +
+  facet_wrap(~stadium_type)
+```
+
+## {-}
+
+## Stadium Type Testing 
+
+### Significant one-tailed t-tests (df = 4168) {.tabset}
+
+``` {r Dome_vs_Open tests}
+stats_plus_stadiums_levels <- stadium_stats %>% 
+  mutate(stadium_type = factor(stadium_type, levels=c("Open", "Dome"))) %>% 
+  mutate(field_type = factor(field_type, levels=c("Grass", "Turf")))
+no_retractable <- stadium_stats[!(stadium_stats$stadium_type %in% "Retractable"),]
+
+```
+total_score ~ stadium_type
+<ul><li>p-value < 0.0001 ***</li>
+<li>(Estimated) Dome - Open = 3.5 points</li></ul>
+ratio_pass_to_run ~ stadium_type
+<ul><li>p-value < 0.0001 ***</li>
+<li>(Estimated) Dome - Open = 0.07 passes/rushes</li></ul>
+passing_attempts_total ~ stadium_type
+<ul><li>p-value = 0.01 **</li> 
+<li>(Estimated) Dome - Open = 1.0 passes</li></ul>
+rushing_attempts_total ~ stadium_type
+<ul><li>p-value < 0.0001 ***</li>
+<li>(Estimated) Dome - Open = -2.0 rushes</li></ul>
+total_yards ~ stadium_type
+<ul><li>p-value < 0.0001 ***</li>
+<li>(Estimated) Dome - Open = 31 yards</li></ul>
+yards_per_catch_total ~ stadium_type
+<ul><li>p-value = 0.04 *</li>
+<li>(Estimated) Dome - Open = 0.1 ypc</li></ul>
+
+
+#### Total Score
+```{r sig1}
+t.test(total_score ~ stadium_type, var.equal=TRUE, alternative = "less", data = stats_plus_stadiums_levels)
+```
+#### Pass:Run
+```{r sig2}
+t.test(ratio_pass_to_run ~ stadium_type, var.equal=TRUE, alternative = "less", data = stats_plus_stadiums_levels)
+```
+#### Passing Attempts
+```{r sig3}
+t.test(passing_attempts_total ~ stadium_type, var.equal=TRUE, alternative = "less", data = stats_plus_stadiums_levels)
+```
+#### Rushing Attempts
+```{r sig4}
+t.test(rushing_attempts_total ~ stadium_type, var.equal=TRUE, alternative = "greater", data = stats_plus_stadiums_levels)
+```
+#### Total Yards
+```{r sig5}
+t.test(total_yards ~ stadium_type, var.equal=TRUE, alternative = "less", data = stats_plus_stadiums_levels)
+```
+#### Combined YPC
+```{r sig6}
+t.test(yards_per_catch_total ~ stadium_type, var.equal=TRUE, alternative = "less", data = stats_plus_stadiums_levels)
+
+```
+#### Total Fumbles
+```{r sig7}
+t.test(total_fumbles ~ stadium_type, var.equal=TRUE, data = stats_plus_stadiums_levels)
+```
+
+### {-}
+
+
+
+### Non Significant Data {.tabset}
+score_difference ~ stadium_type
+<ul><li>p-value = 0.6</li>
+<li>(Estimated) Dome - Open = -0.2 net points</li></ul>
+total_ints ~ stadium_type
+<ul><li>p-value = 0.2</li>
+<li>(Estimated) Dome - Open = -0.05 interceptions</li></ul>
+total_turnovers ~ stadium_type
+<ul><li>p-value = 0.4</li>
+<li>(Estimated) Dome - Open = 0.6 turnovers</li></ul>
+
+#### Score Difference
+```{r nonsig1}
+t.test(score_difference ~ stadium_type, var.equal=TRUE, data = stats_plus_stadiums_levels)
+```
+#### Total Interceptions
+```{r nonsig2}
+t.test(total_ints ~ stadium_type, var.equal=TRUE, alternative = "greater", data = stats_plus_stadiums_levels)
+```
+#### Total Turnovers
+```{r nonsig3}
+t.test(total_turnovers ~ stadium_type, var.equal=TRUE, data = stats_plus_stadiums_levels)
+```
+### {-}
+
+## Field Type Testing
+
+### Significant two-tailed t-tests (df = 4626) {.tabset}
+
+total_score ~ field_type ***<br>
+Turf - Grass = 1.5 points<br>
+<br>
+total_yards ~ field_type ***<br>
+Turf - Grass = 12 yards<br>
+
+#### Total Score
+``` {r field_type_sigtests1}
+t.test(total_score ~ field_type, var.equal=TRUE, data = stats_plus_stadiums_levels)
+```
+
+#### Total Yards
+``` {r field_type_sigtests2}
+t.test(total_yards ~ field_type, var.equal=TRUE, data = stats_plus_stadiums_levels)
+#total_yards ~ field_type***
+#Turf - Grass = 12 yards
+```
+### {-}
+
+### Non-Significant Data {.tabset}
+
+#### Pass:Run
+```{r nonsigfield1}
+t.test(ratio_pass_to_run ~ field_type, var.equal=TRUE, data = stats_plus_stadiums_levels)
+```
+#### Pass Attempts
+```{r nonsigfield2}
+t.test(passing_attempts_total ~ field_type, var.equal=TRUE, data = stats_plus_stadiums_levels)
+```
+#### Rush Attempts
+```{r nonsigfield3}
+t.test(rushing_attempts_total ~ field_type, var.equal=TRUE, data = stats_plus_stadiums_levels)
+```
+#### Combined YPC
+```{r nonsigfield4}
+t.test(yards_per_catch_total ~ field_type, var.equal=TRUE, data = stats_plus_stadiums_levels)
+```
+#### Fumbles
+```{r nonsigfield5}
+t.test(total_fumbles ~ field_type, var.equal=TRUE, data = stats_plus_stadiums_levels)
+```
+#### Turnovers
+```{r nonsigfield6}
+t.test(total_turnovers ~ field_type, var.equal=TRUE, data = stats_plus_stadiums_levels)
+```
+#### Interceptions
+```{r nonsigfield7}
+t.test(total_ints ~ field_type, var.equal=TRUE, data = stats_plus_stadiums_levels)
+```
+#### Score Difference
+```{r nonsigfield8}
+t.test(score_difference ~ field_type, var.equal=TRUE, data = stats_plus_stadiums_levels)
+```
+
+### {-}
+
+# Home vs Away
+The difference between average points scored for the home team and away team is: `r mean(stats_plus_stadiums$total_yards_home) - mean(stats_plus_stadiums$total_yards_away)` <br>
+The difference between average points scored for the home team and away team is: `r mean(stats_plus_stadiums$score_home) - mean(stats_plus_stadiums$score_away)`
+
+```{r score histo}
+
+ggplot(stats_plus_stadiums) +
+  geom_histogram(mapping = aes(x = score_home), fill = "blue", color = "white", alpha = 0.3, binwidth = 2)+
+  xlab("Home Score")
+ggplot(stats_plus_stadiums) +
+  geom_histogram(mapping = aes(x = score_away), fill = "red", color = "black", alpha = 0.3, binwidth = 2)+
+  xlab("Away Score")
+
+```
+```{r yards histo2}
+
+ggplot(stats_plus_stadiums) +
+  geom_histogram(mapping = aes(x = total_yards_home), fill = "purple", color = "white", alpha = 0.3, binwidth = 10)+
+  xlab("Total Yards (Home Team)")
+ggplot(stats_plus_stadiums) +
+  geom_histogram(mapping = aes(x = total_yards_away), fill = "yellow", color = "black", alpha = 0.3, binwidth = 10)+
+  xlab("Total Yards (Away Team)")
+
+```
+
+# Conclusion
+
+Stadium type (Open vs Dome) is statistically significant with differences in score, passing/rushing ratio, pass attempts, rush attempts, yards, yards per catch, and fumbles
+
+Field type (Grass vs Turf) appears to have statistical significance with differences in total yards and total score, however since teams were not selected from a random sample, it is probable that chance plays a large part in quality of team playing on certain fields.
+
+Playing a Home game vs an Away game has a clear and substantial impact on team success
+
+# Scope of Inference
+
+This was a very large dataset (n = 4628), which allowed for robust testing. Since it is observational data, conclusions should not be drawn to other sports or football leagues. Further, t-testing is conditional upon obtaining data for each group in random samples from the population, and this analysis focused instead on the entire population. <br> Randomization could have been introduced in many different ways. The selection of years or teams could have been randomized, or the samples could have been stratified by month, or home stadium location, or overall success (determined by wins/losses, yards, scoring, etc.) <br> My most pressing question remaining is how "gameplan" (most easily seen in pass attempts: rush attempts) changes due to Open/Domed stadiums, and if it changes, does expected firstdowns/yards/score decrease. <br> In short, does bad weather (wind, precipitation, temperature) even the playing field? Mean "Score Difference" would suggest it does not, but there are other ways to measure this.
+<br>
+<br>
+The impacts playing home vs away would be better understood if public data was available for average stadium noise.
+<br>
+<br>
+Lastly, "weather" was measured as a binary between open stadiums and domed stadiums, but a more robust analysis would come with historical weather data.
+
+The impacts playing home vs away would be better understood if public data was available for average stadium noise.
+
+
