@@ -490,6 +490,7 @@ Playing a Home game vs an Away game has a clear and substantial impact on team s
 This was a very large dataset (n = 4628), which allowed for robust testing. Since it is observational data, conclusions should not be drawn to other sports or football leagues. Further, t-testing is conditional upon obtaining data for each group in random samples from the population, and this analysis focused instead on the entire population. <br> Randomization could have been introduced in many different ways. The selection of years or teams could have been randomized, or the samples could have been stratified by month, or home stadium location, or overall success (determined by wins/losses, yards, scoring, etc.) <br> My most pressing question remaining is how "gameplan" (most easily seen in pass attempts: rush attempts) changes due to Open/Domed stadiums, and if it changes, does expected firstdowns/yards/score decrease. <br> In short, does bad weather (wind, precipitation, temperature) even the playing field? Mean "Score Difference" would suggest it does not, but there are other ways to measure this.
 <br>
 <br>
+<br>
 The impacts playing home vs away would be better understood if public data was available for average stadium noise.
 <br>
 <br>
